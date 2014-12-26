@@ -1,0 +1,233 @@
+---
+title: "Hollywood Walk of Shame?"
+author: "Miles Ott"
+date: "Sunday, December 07, 2014"
+output: html_document
+---
+
+My first step is to create a dataframe of the names, categories for which they got the star, and address of star for each of the stars on the walk of fame.  I got these data from the wikipedia page.  
+
+Note: this excludes a few categories that only have one entry: 
+
+1.  Bird Bacaw for Zoology  I have no clue who this bird is, and the wiki link for Bird Bacaw is currently dead.
+2.  Mayor Tom Bradley for Mayor
+3.  The Dodgers for Special.  It must be nice to be in a "Special" category (literally) all of one's own
+
+
+```{r}
+
+require(XML)
+require(RCurl)
+
+hollywood.source<-readHTMLTable("http://en.wikipedia.org/wiki/List_of_stars_on_the_Hollywood_Walk_of_Fame",stringsAsFactors=FALSE)
+
+Names.Stars<-NULL
+Category.Stars<-NULL
+Address.Stars<-NULL
+
+for(i in 2:61){
+  # loading in the raw names, categories, and addresses from each table----------#
+  raw.names<-hollywood.source[[i]]$Name  
+  raw.category<-hollywood.source[[i]]$Category
+  raw.address<-hollywood.source[[i]]$Address
+  
+  #getting rid of non-name rows--------------------------------------------------#
+  index<-1:length(raw.names)
+  non.names<-index[raw.names %in% c("Radio", "Motion pictures","Television","Recording",
+    "Live performance" )| !(raw.category %in% c("Radio", "Motion pictures","Television","Recording",
+    "Live performance", "Motion picture"))]
+  clean.names<-raw.names[-non.names]
+  clean.category<-raw.category[-non.names]
+  clean.address<-raw.address[-non.names]
+  
+  #--------appending cleaned variables to master lists---------------------------#
+  Names.Stars<-c(Names.Stars, clean.names)
+  Category.Stars<-c(Category.Stars, clean.category)
+  Address.Stars<-c(Address.Stars, clean.address)
+}  
+
+Category.Stars[Category.Stars=="Motion picture"]<-"Motion pictures"
+table(Category.Stars)
+dim(table(Address.Stars))
+
+
+```
+
+
+Next Step: Getting URLs for Wikipedia links for each of these.  I had to do a bit of cleaning up.  Part of that was only taking the first person in a duo, unless the first person already had a star of their own, like Ozzy Nelson of Ozzy and Harriet Nelson.
+
+
+##Note: the lone ranger is giving me trouble.  I need to look into that again
+```{r}
+Names.Stars<-gsub(" ", "_", Names.Stars)
+Names.Stars<-gsub("-", "", Names.Stars)
+Names.Stars<-gsub("\n","", Names.Stars)
+
+#-Doing a Little Cleaning up Here
+Names.Stars[Names.Stars=="George_&_Ira_Gershwin"]<-"George_Gershwin"
+Names.Stars[Names.Stars=="The_Munchkins"]<-"Munchkin"
+Names.Stars[Names.Stars=="Edward_(Major)_Bowes"]<-"Edward_Bowes"
+Names.Stars[Names.Stars=="Perry_Como[1]"]<-"Perry_Como"
+Names.Stars[Names.Stars=="Milt_and_Bill_Larsen"]<-"Milt_Larsen"
+Names.Stars[Names.Stars=="Ellen_K."]<-"On_Air_with_Ryan_Seacrest"
+Names.Stars[Names.Stars=="Al_Lohman_&_Roger_Barkley"]<-"Al_Lohman"
+Names.Stars[Names.Stars=="Fred_\"Mister\"_Rogers"]<-"Fred_Rogers"
+Names.Stars[Names.Stars=="Dan_Rowan_and_Dick_Martin"]<-"Dan_Rowan"
+Names.Stars[Names.Stars=="Judith_Sheindlin_(Judge_Judy)"]<-"Judith_Sheindlin"
+Names.Stars[Names.Stars=="Jerry_Stiller_and_Anne_Meara"]<-"Jerry_Stiller"
+Names.Stars[Names.Stars=="Shotgun_Tom_Kelly"]<-"KFMB-FM"
+Names.Stars[Names.Stars=="Steve_Lawrence_&_Eydie_Gorm??"]<-"Eydie_Gorm??"
+Names.Stars[Names.Stars=="Ken_Minyard_&_Robert_Arthur"]<-"Ken_Minyard"
+Names.Stars[Names.Stars=="Ozzie_&_Harriet_Nelson"]<-"Harriet_Nelson"
+Names.Stars[Names.Stars=="Jan_and_Mickey_Rooney"]<-"Jan_Rooney"
+Names.Stars[Names.Stars=="Bob_Seger_&_Silver_Bullet_Band"]<-"Bob_Seger"
+Names.Stars[Names.Stars=="The_Real_Don_Steele"]<-"Don_Steele"
+Names.Stars[Names.Stars=="Julia_LouisDreyfus"]<-"Julia_Louis-Dreyfus"
+Names.Stars[Names.Stars=="Amelita_GalliCurci"]<-"Amelita_Galli-Curci"
+Names.Stars[Names.Stars=="Ernestine_SchumannHeink"]<-"Ernestine_Schumann-Heink"
+Names.Stars[Names.Stars=="HannaBarbera"]<-"Hanna-Barbera"
+Names.Stars[Names.Stars=="Lotte_Lehmann(spelled_Lottie_on_star)"]<-"Lotte_Lehmann"
+Names.Stars[Names.Stars=="Chicago"]<-"Chicago_(band)"
+Names.Stars[Names.Stars=="AnnMargret"]<-"Ann-Margret"
+
+Links.Stars<-paste("http://en.wikipedia.org/wiki/", Names.Stars, sep="")
+
+#checking to make sure the urls are working
+url.works<-sapply(Links.Stars, url.exists)
+
+#getting rid of the urls that are not working
+Names.Stars<-Names.Stars[url.works]
+Links.Stars<-Links.Stars[url.works]
+Address.Stars<-Address.Stars[url.works]
+Category.Stars<-Category.Stars[url.works]
+
+#finding what proportion of urls are working
+mean(url.works)
+```
+
+
+Next Step: Getting the text from the wikipages and doing a little clean-up
+```{r}
+
+
+#---getting html source code from each wikipedia page
+first.try<-sapply(Links.Stars, htmlTreeParse, useInternal=TRUE)
+
+#---just taking the text that is in paragraphs
+cleaner.try<-sapply(first.try,xpathApply, path='//p', xmlValue)  
+
+#---making into one long character vector
+cleaner.try<-sapply(cleaner.try,unlist)
+cleaner.try<-sapply(cleaner.try, paste, collapse=" ")
+
+#---splitting the character vector into a list of words
+cleanest.try<-sapply(cleaner.try, strsplit,  split=' |\\.|,|!|\\)|\\(|"|\\[*.\\]',perl=TRUE)
+
+#---making everything be lowercase
+cleanest.try<-sapply(cleanest.try, tolower)
+
+
+text<-cleanest.try
+```
+
+
+Next Step: Extracting features from the wikipedia pages
+```{r}
+
+n.words.match<-function(word, matches){
+    sum(word %in% matches)
+}
+
+n.rape<-sapply(text, n.words.match, matches=c("rape","rapist","raper", "rapes", "raped"))
+n.criminal<-sapply(text, n.words.match, matches=c("crime","crimes","criminal", "criminals"))
+n.legal<-sapply(text, n.words.match, matches=c("legal", "legally"))
+n.controversy<-sapply(text, n.words.match, matches=c("controversy", "controversial", "controversies"))
+n.jail<-sapply(text, n.words.match, matches=c("jail", "jails", "prison", "prisons", "inprison", "inprisonment"))
+n.police<-sapply(text, n.words.match, matches=c("police", "policeman", "policewoman", "policemen", "policewomen"))
+n.assault<-sapply(text, n.words.match, matches=c("assault", "assaults", "assaulted"))
+n.guilty<-sapply(text, n.words.match, matches=c("guilt", "guilty", "assaulted"))
+n.sentenced<-sapply(text, n.words.match, matches=c("sentence", "sentenced", "sentences"))  
+n.judge<-sapply(text, n.words.match, matches=c("judge", "judges", "judged", "judicial"))
+n.illegal<-sapply(text, n.words.match, matches=c("illegal", "illegally"))
+n.charged<-sapply(text, n.words.match, matches=c("charge", "charges","charged")) 
+n.alleged<-sapply(text, n.words.match, matches=c("alleged", "allegation","allegations",
+                                                 "allegedly")) 
+n.statutory<-sapply(text, n.words.match, matches=c("statutory")) 
+n.charity<-sapply(text, n.words.match, matches=c("charities", "charity"))
+n.philanthrop<-sapply(text, n.words.match, matches=c("philanthropy","philanthropical",
+                                                    "philanthropist"))
+n.harassment<-sapply(text, n.words.match, matches=c("harassment","harass","harasser","harassed", "harassers"))
+n.murder<-sapply(text, n.words.match, matches=c("murder","murders","murderer","murderers", "murdered"))
+n.drug<-sapply(text, n.words.match, matches=c("drug","drugs","drugged")) 
+n.abuse<-sapply(text, n.words.match, matches=c("abuse", "abused", "abuses", "abuser", "abusers"))     
+n.sexual<- sapply(text, n.words.match, matches=c("sex", "sexual")) 
+n.convict<-sapply(text, n.words.match, matches=c("convict", "convicts", "convicted"))   
+```
+
+
+Next Step: Putting all the variables in a dataframe:
+```{r}
+
+Walk.Fame.Data<-data.frame(Names.Stars,Address.Stars, Category.Stars, Links.Stars,n.abuse,n.alleged, n.assault, n.charged, n.charity, n.controversy, n.convict,n.criminal, n.drug, n.harassment, n.illegal, n.jail, n.judge, n.legal, n.murder, n.philanthrop, n.police, n.rape, n.sentenced, n.statutory)
+
+sum.total<-n.abuse+n.alleged+n.assault+n.charged+n.controversy+n.convict+n.criminal+n.drug+n.harassment+n.illegal+n.jail+n.judge+n.legal+n.murder+n.police+n.rape+n.sentenced+n.statutory
+
+```
+
+
+Visualizing the word Distributions
+```{r}
+require(ggplot2)
+
+summary(Walk.Fame.Data)
+
+
+qplot(n.alleged[n.alleged!=0], geom="histogram", main="Alleged", xlab="Number of times 'alleged' appears in Wiki page")
+Names.Stars[n.alleged==10]
+
+qplot(n.controversy[n.controversy!=0], geom="histogram", main="Controversy", xlab="Number of times 'controversy' appears in Wiki page")
+Names.Stars[n.controversy==10]
+
+qplot(n.sentenced[n.sentenced!=0], geom="histogram", main="Sentenced", xlab="Number of times 'sentenced' appears in Wiki page")
+Names.Stars[n.sentenced==6]
+
+qplot(n.convict[n.convict!=0], geom="histogram", main="Convict", xlab="Number of times 'Convict' appears in Wiki page")
+Names.Stars[n.convict==2]
+
+
+qplot(sum.total[sum.total!=0], geom="histogram", main="Total", xlab="")
+Names.Stars[sum.total>20]
+
+```
+
+
+
+mapping the variables onto the city streets
+```{r}
+library(stringr)
+library(ggmap)
+library(qmap)
+attach(Walk.Fame.Data)
+ads <- Address.Stars[n.assault>0]
+ads <- paste(ads, ', hollywood, california', sep = '')
+ads <- str_trim(ads)
+gc <- geocode(ads)
+
+n.assault.map<-n.assault[n.assault>0]
+gc<-data.frame(gc,n.assault.map)
+
+newmap <- qmap('Hollywood Walk of Fame', zoom = 14,color = 'bw', legend = 'topleft')
+
+newmap+geom_point(aes(x = lon, y = lat, size =n.assault.map), colour="dark orange",show_guide=FALSE,data=gc)
+
+
+
+#newmap+ stat_density2d(aes(x = lon, y = lat, 
+#  fill = ..level.. , alpha = ..level..),size = 2, bins = 4, 
+#  data = gc, geom = 'polygon') 
+#  scale_fill_gradient('Rape') +
+#  scale_alpha(range = c(.4, .75), guide = FALSE) +
+#  guides(fill = guide_colorbar(barwidth = 1.5, barheight = 10))
+
+```
+
